@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "target": "ES2020",
+    "outDir": "dist/main",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true,
+    "types": ["node"],
+    "baseUrl": "./"
+  },
+  "include": ["src/main/**/*.ts", "src/types.d.ts"],
+  "exclude": ["node_modules"]
+}

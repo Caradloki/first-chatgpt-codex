@@ -1,0 +1,14 @@
+appId: com.lumina.reader
+productName: Lumina Reader
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/main/**/*
+  - dist/preload/**/*
+  - dist/renderer/**/*
+extraMetadata:
+  main: dist/main/main.js
+win:
+  target:
+    - nsis
