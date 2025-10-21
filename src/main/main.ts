@@ -130,6 +130,8 @@ function defineIpcHandlers(db: Database) {
       }
     }
 
+    db.evaluateLibraryMilestones();
+
     return { added, skipped };
   });
 
@@ -153,5 +155,13 @@ function defineIpcHandlers(db: Database) {
 
   ipcMain.handle('sessions:end', async (_event, sessionId: string) => {
     return db.endSession(sessionId);
+  });
+
+  ipcMain.handle('stats:overview', async () => {
+    return db.getOverview();
+  });
+
+  ipcMain.handle('rewards:list', async () => {
+    return db.getRewards();
   });
 }
