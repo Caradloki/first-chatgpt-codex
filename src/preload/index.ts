@@ -9,6 +9,8 @@ const api: LuminaAPI = {
   recordProgress: (data) => ipcRenderer.invoke('progress:record', data),
   startSession: (bookId) => ipcRenderer.invoke('sessions:start', bookId),
   endSession: (sessionId) => ipcRenderer.invoke('sessions:end', sessionId),
+  getOverview: () => ipcRenderer.invoke('stats:overview'),
+  getRewards: () => ipcRenderer.invoke('rewards:list'),
 };
 
 contextBridge.exposeInMainWorld('lumina', api);

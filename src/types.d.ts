@@ -23,8 +23,12 @@ export interface SessionRecord {
   id: string;
   bookId: string;
   startedAt: string;
-  endedAt?: string;
-  minutes?: number;
+  endedAt?: string | null;
+  minutes?: number | null;
+}
+
+export interface SessionSummary extends SessionRecord {
+  bookTitle?: string | null;
 }
 
 export interface LibraryImportResult {
@@ -35,6 +39,29 @@ export interface LibraryImportResult {
 export interface ReaderState {
   book: Book;
   progress?: ProgressRecord;
+}
+
+export interface RewardRecord {
+  id: string;
+  code: string;
+  type: string;
+  label: string;
+  xp: number;
+  bookId?: string | null;
+  grantedAt: string;
+  meta?: Record<string, unknown> | null;
+}
+
+export interface OverviewStats {
+  totalBooks: number;
+  inProgress: number;
+  completed: number;
+  totalMinutes: number;
+  todayMinutes: number;
+  streakDays: number;
+  readingDays: number;
+  totalXp: number;
+  recentSessions: SessionSummary[];
 }
 
 export interface LuminaAPI {
@@ -51,6 +78,8 @@ export interface LuminaAPI {
   }): Promise<ProgressRecord>;
   startSession(bookId: string): Promise<SessionRecord>;
   endSession(sessionId: string): Promise<SessionRecord | null>;
+  getOverview(): Promise<OverviewStats>;
+  getRewards(): Promise<RewardRecord[]>;
 }
 
 declare global {

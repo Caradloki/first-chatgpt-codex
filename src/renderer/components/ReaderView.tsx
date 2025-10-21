@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, ChangeEvent, UIEvent } from 'react';
 import { ArrowLeft, BookOpen, Loader2 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import workerSrc from 'pdfjs-dist/build/pdf.worker?url';
 import type { ReaderState } from '#types';
+import { marked } from 'marked';
 
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+marked.setOptions({ gfm: true, breaks: true });
 
 interface Props {
   state: ReaderState;
@@ -17,16 +19,23 @@ interface Props {
 const ReaderView = ({ state, onClose }: Props) => {
   const { book, progress } = state;
   const [fileData, setFileData] = useState<Uint8Array | null>(null);
+  const [textContent, setTextContent] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number | null>(progress?.totalPages ?? null);
   const [pageNumber, setPageNumber] = useState(progress?.currentPage ?? 1);
   const sessionRef = useRef<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [textPercent, setTextPercent] = useState(() => Math.round(progress?.percent ?? 0));
+  const textContainerRef = useRef<HTMLDivElement | null>(null);
+  const lastRecordedRef = useRef<number | null>(null);
 
   const percent = useMemo(() => {
-    if (!numPages) return 0;
-    return Math.min(100, Math.round((pageNumber / numPages) * 100));
-  }, [pageNumber, numPages]);
+    if (book.format === 'pdf') {
+      if (!numPages) return 0;
+      return Math.min(100, Math.round((pageNumber / numPages) * 100));
+    }
+    return Math.min(100, Math.max(0, Math.round(textPercent)));
+  }, [book.format, pageNumber, numPages, textPercent]);
 
   useEffect(() => {
     let mounted = true;
@@ -41,7 +50,14 @@ const ReaderView = ({ state, onClose }: Props) => {
           setError('Unable to load book contents');
           return;
         }
-        setFileData(new Uint8Array(payload.data));
+        const binary = new Uint8Array(payload.data);
+        setFileData(binary);
+        if (book.format === 'md' || book.format === 'txt') {
+          const decoder = new TextDecoder('utf-8');
+          setTextContent(decoder.decode(binary));
+        } else {
+          setTextContent(null);
+        }
       })
       .catch((err) => {
         console.error(err);
@@ -58,7 +74,15 @@ const ReaderView = ({ state, onClose }: Props) => {
     return () => {
       mounted = false;
     };
-  }, [book.id]);
+  }, [book.id, book.format]);
+
+  useEffect(() => {
+    setTextPercent(Math.round(progress?.percent ?? 0));
+    if (progress?.currentPage && book.format === 'pdf') {
+      setPageNumber(progress.currentPage);
+    }
+    lastRecordedRef.current = null;
+  }, [book.format, book.id, progress]);
 
   useEffect(() => {
     let disposed = false;
@@ -105,10 +129,44 @@ const ReaderView = ({ state, onClose }: Props) => {
   );
 
   useEffect(() => {
+    if (book.format !== 'pdf') {
+      return;
+    }
     if (numPages) {
       recordProgress(pageNumber, numPages);
     }
-  }, [pageNumber, numPages, recordProgress]);
+  }, [book.format, pageNumber, numPages, recordProgress]);
+
+  useEffect(() => {
+    if (book.format === 'pdf') {
+      return;
+    }
+    if (textPercent < 0 || textPercent > 100) {
+      return;
+    }
+    if (lastRecordedRef.current === textPercent) {
+      return;
+    }
+    lastRecordedRef.current = textPercent;
+    recordProgress(textPercent, 100);
+  }, [book.format, textPercent, recordProgress]);
+
+  useEffect(() => {
+    if (book.format === 'pdf') {
+      return;
+    }
+    if (!textContainerRef.current) {
+      return;
+    }
+    const container = textContainerRef.current;
+    const percentValue = (progress?.percent ?? 0) / 100;
+    requestAnimationFrame(() => {
+      const total = container.scrollHeight - container.clientHeight;
+      if (total > 0) {
+        container.scrollTop = total * percentValue;
+      }
+    });
+  }, [book.format, progress, textContent]);
 
   const handlePrev = () => {
     setPageNumber((prev) => Math.max(1, prev - 1));
@@ -123,18 +181,15 @@ const ReaderView = ({ state, onClose }: Props) => {
     setPageNumber(Number(event.target.value));
   };
 
-  const renderContent = () => {
-    if (book.format !== 'pdf') {
-      return (
-        <div className="empty-state" style={{ margin: 'auto', maxWidth: 420 }}>
-          <p>
-            {book.format.toUpperCase()} rendering is coming soon. You can still track progress and sessions
-            today by importing PDF files.
-          </p>
-        </div>
-      );
-    }
+  const handleTextScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    const target = event.currentTarget;
+    const total = target.scrollHeight - target.clientHeight;
+    const ratio = total > 0 ? target.scrollTop / total : 1;
+    const nextPercent = Math.round(Math.min(100, Math.max(0, ratio * 100)));
+    setTextPercent(nextPercent);
+  }, []);
 
+  const renderContent = () => {
     if (isLoading) {
       return (
         <div className="empty-state" style={{ margin: 'auto' }}>
@@ -151,14 +206,30 @@ const ReaderView = ({ state, onClose }: Props) => {
       );
     }
 
-    if (!fileData) {
+    if (book.format === 'pdf') {
+      if (!fileData) {
+        return null;
+      }
+
+      return (
+        <Document file={{ data: fileData }} onLoadSuccess={handleDocumentLoad} loading={<Loader2 className="spin" />}>
+          <Page pageNumber={pageNumber} renderTextLayer renderAnnotationLayer width={820} />
+        </Document>
+      );
+    }
+
+    if (!textContent) {
       return null;
     }
 
     return (
-      <Document file={{ data: fileData }} onLoadSuccess={handleDocumentLoad} loading={<Loader2 className="spin" />}> 
-        <Page pageNumber={pageNumber} renderTextLayer renderAnnotationLayer width={820} />
-      </Document>
+      <div className="reader-text" ref={textContainerRef} onScroll={handleTextScroll}>
+        {book.format === 'md' ? (
+          <article className="markdown-body" dangerouslySetInnerHTML={{ __html: marked.parse(textContent) }} />
+        ) : (
+          <pre>{textContent}</pre>
+        )}
+      </div>
     );
   };
 
@@ -175,8 +246,10 @@ const ReaderView = ({ state, onClose }: Props) => {
 
         <div className="reader-stats">
           <div className="page-counter">
-            <BookOpen size={16} /> Page {pageNumber}
-            {numPages ? ` of ${numPages}` : ''}
+            <BookOpen size={16} />
+            {book.format === 'pdf'
+              ? `Page ${pageNumber}${numPages ? ` of ${numPages}` : ''}`
+              : `Position ${percent}%`}
           </div>
           <div className="reader-progress">
             <span style={{ width: `${percent}%` }} />
@@ -184,7 +257,7 @@ const ReaderView = ({ state, onClose }: Props) => {
           <div className="page-counter">{percent}% complete</div>
         </div>
 
-        {numPages && (
+        {book.format === 'pdf' && numPages && (
           <div className="page-controls">
             <button className="button secondary" onClick={handlePrev} disabled={pageNumber <= 1}>
               Previous
